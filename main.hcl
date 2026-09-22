@@ -1,5 +1,5 @@
 resource "lab" "bitrise_workflow_automation" {
-  title = "Bitrise: Automate Your Mobile CI/CD"
+  title = "Bitrise: Automate Your Mobile ci/cd"
 
   description = <<-EOF
     Build, test, and deploy mobile apps automatically — from a single visual workflow
