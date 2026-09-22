@@ -1,0 +1,35 @@
+format_version: '26'
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+app:
+  envs:
+  - APP_NAME: MyMobileApp
+  - BUILD_ENV: production
+workflows:
+  primary:
+    title: Primary Build
+    steps:
+    - script@1:
+        title: Git Clone Repository
+        inputs:
+        - content: |
+            #!/bin/bash
+            echo "Cloning repository for ${APP_NAME}..."
+            echo "Branch: main"
+            echo "Commit: a3f8c21"
+            echo "Clone complete."
+    - script@1:
+        title: Run Tests
+        inputs:
+        - content: |
+            #!/bin/bash
+            echo "Running unit tests for ${APP_NAME}..."
+            echo "Tests: 42 passed, 0 failed"
+            echo "Coverage: 87%"
+    - script@1:
+        title: Deploy to Bitrise.io
+        inputs:
+        - content: |
+            #!/bin/bash
+            echo "Deploying build artifacts..."
+            echo "Build URL: https://app.bitrise.io/build/demo"
+            echo "Status: SUCCESS"

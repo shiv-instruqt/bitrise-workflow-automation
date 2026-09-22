@@ -1,0 +1,137 @@
+#!/bin/bash
+# Bitrise CLI wrapper — reads bitrise.yml and executes script@1 steps
+VERSION="2.43.3"
+
+if [ "${1}" = "--version" ] || [ "${1}" = "version" ]; then
+  echo "Bitrise CLI version: ${VERSION}"
+  exit 0
+fi
+
+if [ "${1}" != "run" ]; then
+  echo "Usage: bitrise run <workflow>"
+  exit 1
+fi
+
+WORKFLOW="${2:-primary}"
+BITRISE_YML="${BITRISE_YML_PATH:-./bitrise.yml}"
+
+if [ ! -f "${BITRISE_YML}" ]; then
+  echo "Error: bitrise.yml not found in current directory"
+  exit 1
+fi
+
+# Extract app env vars
+APP_NAME=$(grep -A5 "^app:" "${BITRISE_YML}" | grep "APP_NAME:" | awk -F': ' '{print $2}' | tr -d '"' || echo "MyMobileApp")
+BUILD_ENV=$(grep -A5 "^app:" "${BITRISE_YML}" | grep "BUILD_ENV:" | awk -F': ' '{print $2}' | tr -d '"' || echo "production")
+export APP_NAME BUILD_ENV
+
+# Check workflow exists
+if ! grep -q "^  ${WORKFLOW}:" "${BITRISE_YML}" 2>/dev/null; then
+  echo "Error: workflow '${WORKFLOW}' not found in bitrise.yml"
+  exit 1
+fi
+
+TIMESTAMP=$(date +"%H:%M:%S")
+echo ""
+echo -e "\033[32m  ▸   Bitrise CLI v${VERSION}\033[0m"
+echo ""
+echo -e "\033[1m+------------------------------------------------------------------------------+"
+echo "| bitrise run ${WORKFLOW}"
+echo -e "+------------------------------------------------------------------------------+\033[0m"
+echo ""
+echo "INFO[${TIMESTAMP}] Starting workflow: ${WORKFLOW}"
+echo ""
+
+# Extract and run script@1 titles and content blocks
+STEP_NUM=0
+IN_WORKFLOW=0
+IN_STEPS=0
+CURRENT_TITLE=""
+IN_CONTENT=0
+SCRIPT_LINES=()
+
+while IFS= read -r line; do
+  # Detect our workflow
+  if echo "$line" | grep -q "^  ${WORKFLOW}:"; then
+    IN_WORKFLOW=1
+    continue
+  fi
+
+  # Detect another top-level workflow (stop)
+  if [ "$IN_WORKFLOW" = "1" ] && echo "$line" | grep -qE "^  [a-zA-Z_-]+:" && ! echo "$line" | grep -q "^  ${WORKFLOW}:"; then
+    IN_WORKFLOW=0
+  fi
+
+  if [ "$IN_WORKFLOW" = "0" ]; then continue; fi
+
+  # Detect steps block
+  if echo "$line" | grep -q "^    steps:"; then
+    IN_STEPS=1
+    continue
+  fi
+
+  if [ "$IN_STEPS" = "0" ]; then continue; fi
+
+  # Detect step title
+  if echo "$line" | grep -q "^        title:"; then
+    CURRENT_TITLE=$(echo "$line" | sed 's/.*title: //')
+    STEP_NUM=$((STEP_NUM + 1))
+    SCRIPT_LINES=()
+    IN_CONTENT=0
+    continue
+  fi
+
+  # Detect content block start
+  if echo "$line" | grep -q "^        - content: |"; then
+    IN_CONTENT=1
+    continue
+  fi
+
+  # Collect content lines
+  if [ "$IN_CONTENT" = "1" ]; then
+    if echo "$line" | grep -qE "^          "; then
+      SCRIPT_LINES+=("$(echo "$line" | sed 's/^          //')")
+    else
+      # End of content — run the step
+      TS=$(date +"%H:%M:%S")
+      echo "+---+---------------------------------------------------------------+"
+      printf "| %s | %-61s |\n" "$STEP_NUM" "${CURRENT_TITLE}"
+      echo "+---+---------------------------------------------------------------+"
+      echo ""
+      # Execute the accumulated script
+      tmpf=$(mktemp)
+      printf '%s\n' "${SCRIPT_LINES[@]}" > "$tmpf"
+      bash "$tmpf"
+      rm -f "$tmpf"
+      echo ""
+      echo -e "INFO[${TS}] Step ${STEP_NUM} (${CURRENT_TITLE}) status: \033[32mSuccess\033[0m"
+      echo ""
+      IN_CONTENT=0
+      SCRIPT_LINES=()
+    fi
+  fi
+done < "${BITRISE_YML}"
+
+# Flush any last step
+if [ "$IN_CONTENT" = "1" ] && [ "${#SCRIPT_LINES[@]}" -gt 0 ]; then
+  TS=$(date +"%H:%M:%S")
+  echo "+---+---------------------------------------------------------------+"
+  printf "| %s | %-61s |\n" "$STEP_NUM" "${CURRENT_TITLE}"
+  echo "+---+---------------------------------------------------------------+"
+  echo ""
+  tmpf=$(mktemp)
+  printf '%s\n' "${SCRIPT_LINES[@]}" > "$tmpf"
+  bash "$tmpf"
+  rm -f "$tmpf"
+  echo ""
+  echo -e "INFO[${TS}] Step ${STEP_NUM} (${CURRENT_TITLE}) status: \033[32mSuccess\033[0m"
+  echo ""
+fi
+
+echo "+------------------------------------------------------------------------------+"
+echo "| workflow: ${WORKFLOW}                                                         "
+echo "| steps: ${STEP_NUM} succeeded                                                 "
+echo "+------------------------------------------------------------------------------+"
+echo ""
+echo -e "INFO[$(date +"%H:%M:%S")] Workflow '${WORKFLOW}' completed with status: \033[32mSuccess\033[0m"
+echo ""
