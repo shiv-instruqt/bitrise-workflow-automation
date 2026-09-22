@@ -10,7 +10,7 @@ resource "lab" "bitrise_workflow_automation" {
     add a code quality step, and run parallel workflows — all without a Bitrise account.
   EOF
 
-  icon = "./assets/bitrise.png"
+  icon = "assets/bitrise.png"
 
   settings {
     timelimit {
